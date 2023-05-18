@@ -1,0 +1,85 @@
+const jwt = require("jsonwebtoken");
+const config = require("../../config/auth");
+const User = require("../models/Users");
+const help = require("../utils/help")
+
+
+const auth = async (req, res, next) => {
+ 
+  try {
+    const access_token = req.header("Authorization").replace("Bearer ", "");
+    if (!access_token) {
+      return res.status(401).send({
+        data: { user: {}, token: null },
+        msg: "Đã hết phiên đăng nhập. Vui lòng đăng nhập lại",
+        status: false,
+      });
+    }
+  
+    let check = jwt.verify(access_token, config.secret);
+    if (!check)
+      return res.status(401).send({
+        data: { user: {}, token: null },
+        msg: "Đã hết phiên đăng nhập. Vui lòng đăng nhập lại",
+        status: false,
+      });
+    let user = {}
+    // var clientIp =  requestIp.getClientIp(req);  
+    
+    if(check.data.device == "web")
+    {
+      
+      user = await User.findOne({
+        $or: [
+          { username : check.data.username},
+          { email: check.data.username },
+          { phone: check.data.username }
+        ]
+      , code_web: check.data.code, ip_web: check.data.ip}).exec();
+
+    }
+    else if(check.data.device == "mobile")
+    {
+      user = await User.findOne({   $or: [
+        { username : check.data.username},
+        { email: check.data.username },
+        { phone: check.data.username }
+      ], code_mobile: check.data.code, ip_mobile: check.data.ip}).exec();
+    }
+    else {
+      return res.status(401).send({
+        data: { user: {}, token: null },
+        msg: "Đăng nhập thất bại, thông tin không hợp lệ",
+        status: false,
+      });
+    }
+
+    if (user) {
+      req.user = user;
+      req.token = access_token;
+      req.device = check.data.device
+      next();
+    } else {
+      let user = await User.findOne({username: check.data.username}).exec();
+      user.code_mobile = check.data.device == "mobile" ? help.uuidv4Short() : user.code_mobile ? user.code_mobile : help.uuidv4Short()
+      user.code_web = check.data.device == "web" ? help.uuidv4Short() : user.code_web ? user.code_web : help.uuidv4Short()
+      user.ip_mobile = check.data.device == "mobile" ? req.clientIp : user.ip_mobile ? user.code_mobile : req.clientIp
+      user.ip_web = check.data.device == "web" ? req.clientIp : user.ip_mobile ? user.ip_mobile : req.clientIp
+      user.save();
+      return res.status(401).send({
+        data: { user: {}, token: null },
+        msg: "Đã hết phiên đăng nhập. Vui lòng đăng nhập lại",
+        status: false,
+      });
+    }
+  } catch (error) {
+
+    return res.status(401).send({
+      data: { user: {}, token: null },
+      msg: "Đã hết phiên đăng nhập. Vui lòng đăng nhập lại:"+error.message,
+      status: false,
+    });
+  }
+};
+
+module.exports = auth;
